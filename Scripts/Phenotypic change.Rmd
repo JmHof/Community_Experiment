@@ -1,0 +1,224 @@
+---
+title: "Phenotypic change"
+author: "Julius Hoffmann"
+date: "2024-01-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+
+```{r , message=FALSE}
+library(tidyverse)
+library(gridExtra)
+library(data.table)
+library(ggh4x)
+library(flextable)
+```
+
+
+```{r}
+set_flextable_defaults(
+  font.size = 10, theme_fun = theme_vanilla,
+  padding = 6,
+  font.family = "Arial", digits = 3, line_spacing = 1.3)
+```
+
+
+## Load data
+
+```{r pressure, echo=FALSE}
+OD_96h<- read.csv("../derived data/Clone_OD_96h.txt")
+```
+
+1) remove defence values > 0 from the data
+```{r}
+OD_96h[,c("gPred_gAlone" )] <-  replace(OD_96h[,c("gPred_gAlone" )], OD_96h[,c("gPred_gAlone" )] > 0, c(NA))
+```
+
+2) calculate median traits and corresponding quantiles
+```{r}
+
+Obs_traits_stats <- OD_96h %>% 
+  group_by(prey,predator, replicate, experiment_day) %>% 
+  reframe(median_df =  median(gPred_gAlone, na.rm = TRUE),
+          median_growth = median(cloneOD, na.rm = TRUE),
+          median_df_quant_1 = quantile(gPred_gAlone, probs = 0.25, na.rm = TRUE), 
+          median_df_quant_2 = quantile(gPred_gAlone, probs = 0.75, na.rm = TRUE),
+          median_growth_quant_1 = quantile(cloneOD, probs = 0.25, na.rm = TRUE), 
+          median_growth_quant_2 = quantile(cloneOD, probs = 0.75, na.rm = TRUE))
+
+```
+
+## Statistical Analysis
+1) Testing statistical significance of difference between carrying capacity and defence distributions on day 8 and day 60.
+
+For defence:
+```{r}
+tests_defence <- OD_96h %>% 
+  mutate(replicate = str_replace_all(replicate, c("1" = "A", "3" = "B", "5" = "C"))) %>% 
+  filter(experiment_day %in% c(8,60)) %>% 
+  group_by(prey,predator,replicate) %>% 
+  reframe(p.value = kruskal.test(gPred_gAlone ~ experiment_day)$p.value) %>% 
+  ungroup() %>% 
+  mutate(p.value_corr = p.adjust(p.value,method = "BH"))
+
+
+ft_tests_defence <- flextable(tests_defence) 
+ft_tests_defence <- colformat_double(x = ft_tests_defence, digits = 3)
+
+ft_tests_defence 
+save_as_image(ft_tests_defence,"../Results/kruskal_test_defence.png")
+```
+
+For carrying capacity:
+```{r}
+tests_carrying_cap <- OD_96h %>% 
+  mutate(replicate = str_replace_all(replicate, c("1" = "A", "3" = "B", "5" = "C"))) %>% 
+  filter(experiment_day %in% c(8,60)) %>% 
+  group_by(prey,predator,replicate) %>% 
+  reframe(p.value = kruskal.test(cloneOD ~ experiment_day)$p.value) %>% 
+  ungroup() %>% 
+  mutate(p.value_corr = p.adjust(p.value,method = "BH")) 
+
+
+ft_tests_carrying_cap <-flextable(tests_carrying_cap) %>% 
+                                colformat_double(digits = 3)
+ft_tests_carrying_cap
+
+save_as_image(ft_tests_carrying_cap,"../Results/kruskal_carrying_cap.png")
+```
+
+
+2) Testing correlation between carrying capacity and defence based on median values per microcosm and sampling day.
+
+```{r}
+
+median_traits_corr <- OD_96h %>% 
+  group_by(prey,predator, replicate, experiment_day) %>% 
+  reframe(median_df =  median(gPred_gAlone, na.rm = TRUE),
+          median_growth = median(cloneOD, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  reframe(correlation = cor.test(median_growth, median_df, na.action("na.omit"),method = "kendall")$estimate,
+          p_value = cor.test(median_growth, median_df, na.action("na.omit"),method = "kendall")$p.value) %>% 
+  ungroup() %>% 
+  mutate(p_value_corr = p.adjust(p_value,method = "BH"))%>% 
+  flextable() %>% 
+  colformat_double(digits = 4)
+median_traits_corr
+
+save_as_image(median_traits_corr,"../Results/correlation_defence_carrying_cap.png")
+```
+
+
+## Visualise Community Level Phenotypic Change
+
+```{r, echo=FALSE}
+prey.labs <- c("ancestral prey", "evolved prey")
+names(prey.labs) <- c("Ancestral Bacteria", "Evolved Bacteria")
+
+predator.labs <-  c("ancestral ciliates", "evolved ciliates")
+names(predator.labs) <- c("Ancestral Ciliates", "Evolved Ciliates")
+
+backgrounds <- list(NULL,element_blank())
+texts<- list(NULL,element_blank())
+disabled_strip <- strip_nested(
+  background_x = backgrounds,
+  text_x = texts,
+  by_layer_x = TRUE)
+
+ggplot(data = Obs_traits_stats) +
+  geom_point( mapping = aes(x = median_df, y = median_growth, shape = interaction(predator,experiment_day), colour = interaction(prey,replicate), fill=interaction(prey,replicate) ),size = 4, stroke = 1.6)+
+  geom_path(mapping =aes(x = median_df, y = median_growth), arrow = arrow(length=unit(0.3,"cm"),type = "closed",angle = 20), colour = "#000000", linewidth = 0.8) +
+  geom_errorbar(mapping =aes(x = median_df, y = median_growth, ymin = median_growth_quant_1, ymax = median_growth_quant_2), width=.00, linewidth = 0.6)+
+  geom_errorbarh(mapping =aes( y = median_growth, xmin = median_df_quant_1, xmax = median_df_quant_2), height=.00, linewidth = 0.6)+
+  facet_nested(predator ~ prey +replicate , labeller = labeller(prey = prey.labs, predator = predator.labs), strip = disabled_strip)+
+  
+  
+  scale_shape_manual("Median on day\n of experiment", breaks = c("Ancestral Ciliates.8","Ancestral Ciliates.28","Ancestral Ciliates.60","Evolved Ciliates.8", "Evolved Ciliates.28","Evolved Ciliates.60"), values = c(1,21,19,2,24,17) ,guide = "none")+
+  scale_colour_manual(breaks = c("Ancestral Bacteria.1","Evolved Bacteria.1","Ancestral Bacteria.3","Evolved Bacteria.3","Ancestral Bacteria.5","Evolved Bacteria.5"), values = c("#7cac00e6","#c87cffff","#7cac00e6", "#00bec4ff","#7cac00e6","#f8776eff"),guide = "none")+
+  scale_fill_manual(breaks = c("Ancestral Bacteria.1","Evolved Bacteria.1","Ancestral Bacteria.3","Evolved Bacteria.3","Ancestral Bacteria.5","Evolved Bacteria.5"), values = c("#CCCCCC","#CCCCCC","#CCCCCC", "#CCCCCC","#CCCCCC","#CCCCCC"),guide = "none")+
+  
+  labs( x = "defence [log( growth with predator / growth alone )]", y = "growth capacity [optical density]")+
+  xlim(-3.2,0)+
+  ylim(0,0.75)+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 18),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "black"),
+         strip.text = element_text(size = 18, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+         
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(), 
+         axis.line = element_line(colour = "black"))  
+
+ggsave("Phenotypic_change_d8_d60.jpg", device = "jpg", path = "../Results", width = 450, height = 200,  units = "mm" )
+```
+
+## Visualise overall trait distribution
+
+1) Defence
+
+```{r, echo=FALSE, fig.dim=c(10,8)}
+
+OD_96h %>% 
+ 
+ggplot()+
+  geom_histogram(aes(x= gPred_gAlone))+
+  facet_grid(predator ~ prey)+
+  labs(x = "defence [log( growth with predator / growth alone )]")+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 18),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "black"),
+         strip.text = element_text(size = 18, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+         
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(), 
+         axis.line = element_line(colour = "black"))  
+
+ggsave("Phenotypic_defence_distribution.jpg", device = "jpg", path = "../Results", width = 360, height = 200,  units = "mm" )
+
+```
+
+1) Carrying capacity
+
+```{r, echo=FALSE, fig.dim=c(10,8)}
+
+OD_96h %>% 
+
+ggplot()+
+  geom_histogram(aes(x= cloneOD))+
+  facet_grid(predator ~ prey)+
+  labs(x = "growth capacity [optical density]")+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 18),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "black"),
+         strip.text = element_text(size = 18, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+         
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(), 
+         axis.line = element_line(colour = "black"))  
+
+ggsave("Phenotypic_growth_distribution.jpg", device = "jpg", path = "../Results", width = 360, height = 200,  units = "mm" )
+
+```

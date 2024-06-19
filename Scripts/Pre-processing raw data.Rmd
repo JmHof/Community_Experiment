@@ -1,0 +1,99 @@
+---
+title: "Pre-processing raw data"
+author: "Julius Hoffmann"
+date: "2024-01-26"
+output: html_document
+---
+## Aim
+With this script I pre-process the phenotypic data acquired from clones during the community (mis-)match experiment.
+I also merge the counts data from 16s rRNA sequecning with the corresponding metadata.
+The created files are then saved to be used in further analyses.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Load Packages
+
+```{r , message=FALSE}
+library(tidyverse)
+
+```
+
+## Load data
+
+
+
+```{r, message=FALSE}
+traits_exp <- read.csv("../Data/experiment_clones_traits.tsv", sep = "\t")
+
+metadata <- read.csv("../Data/metadata.tsv", sep = "\t")
+sequencing_counts <- read.csv("../Data/sequencing_counts.tsv", sep = "\t")
+
+predator_density_raw <- read_tsv("../Data/ciliate_cell_counts.tsv")
+prey_density_raw <-read_tsv("../Data/Bacterial Densities.txt")
+
+```
+
+## Phenotypic data
+
+1) select OD values of the relevant time point (i.e. after 96h)
+```{r}
+OD_96h <- filter(traits_exp, incubation_length_hours == 96)
+```
+
+2) Calculate the defence value for the OD values after 96h.
+Also only select relevant information.
+```{r}
+gPred_gAlone <- log(OD_96h [,"clone_plus_ciliateOD"]/OD_96h [,"cloneOD"])
+OD_96h  <- cbind(OD_96h , gPred_gAlone)
+OD_96h  <- OD_96h [,c(4,5,6,7,8,10,15)]
+```
+3) Save the created file to a dedicated folder
+
+```{r}
+write.csv(OD_96h,"../derived data/Clone_OD_96h.txt", row.names = TRUE)
+
+```
+
+## 16s rRNA sequencing
+1) Joining both sequencing counts with meta data
+```{r}
+species_frequencies <- left_join(sequencing_counts, metadata,relationship = "many-to-many")
+```
+
+2) Select only the data relevant for this experiment (i.e. transfer volume 1800µl)
+
+```{r}
+
+species_frequencies <- species_frequencies %>% 
+  filter(transfer_volume == "1800uL")
+
+```
+
+3) Save the created file to the dedicated folder
+
+```{r}
+write.csv(species_frequencies,"../Data/sequencing_counts and metadata.csv", row.names = FALSE)
+
+```
+
+## Population Densities
+
+```{r}
+predator_density_filtered <- predator_density_raw %>% 
+  filter(replicate %in% c("A","C","E") & transfer_volume == "1800uL")
+
+prey_density_filtered <-  prey_density_raw %>% 
+  filter(replicate %in% c("A", "C", "E") & transfer_category == "hi") 
+```
+
+```{r}
+
+write_delim(predator_density_filtered,"../derived data/predator_densities.tsv")
+
+write_delim(prey_density_filtered,"../derived data/prey_densities.tsv")
+
+```
+
