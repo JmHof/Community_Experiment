@@ -1,0 +1,487 @@
+---
+title: "Contribution Species Sorting and Evolution"
+author: "Julius Hoffmann"
+date: "2024-01-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Load packages
+
+```{r, message=FALSE}
+library(tidyverse)
+library(ggh4x)
+library(lme4)
+library(emmeans)
+library(blmeco)
+library(lmerTest)
+library(flextable)
+```
+
+```{r}
+set_flextable_defaults(
+  font.size = 10, theme_fun = theme_vanilla,
+  padding = 6,
+  font.family = "Arial",digits = 3)
+```
+
+## Load data
+
+Species frequencies from 16s rRNA sequencing, initial trait data and trait data on clones isolated during the community (mis-)match experiment are loaded.
+
+```{r , message=FALSE}
+
+Species_counts <- read.csv("../Data/sequencing_counts and metadata.csv", sep = ",")
+EVO_Trait <- read_tsv("../Data/Evolved Initial Traits AMiGA.txt")
+ANC_Trait <- read_tsv("../Data/Ancestral Initial Traits AMiGA.txt")
+Traits_obs <- read.csv("../derived data/Clone_OD_96h.txt")
+
+```
+
+## Data clean-up
+
+Before working with the data it needs to be brought into the right shape.
+
+1) Only the necessary data is selected.
+
+```{r}
+
+Traits_obs <- Traits_obs[,2:8]
+
+##select relevant information from the 16s-rRNA counts data
+Species_counts <- Species_counts[,c(2,3,4,5,8,9,10,11)]
+
+##change replicate names to A, B, C
+old_rep <- c("A","C","E")
+new_rep <- c("1","3","5")
+Species_counts[,"replicate"]  <- new_rep[match(Species_counts[,"replicate"], old_rep, nomatch = 0)] #removes other replicates
+
+```
+
+2) Variable names and values: 
+
+All information is re-named to be cohesive across all types of data.
+
+```{r}
+
+##to match the column names of EVO and ANC Trait to the ones used in 16s-rRNA counts
+colnames(EVO_Trait) <-c("strainID","prey_history", "growth", "pred_treatment", "defence") #, "genus", "species"
+colnames(ANC_Trait) <-c("strainID","prey_history", "growth", "pred_treatment", "defence")#, "genus", "species"
+##to match the columns in the observed trait data to the initial trait data and 16s-rRNA counts
+colnames(Traits_obs) <- c("growth","growth_with_ciliates","prey_history", "predator_history","replicate","time_days",  "defence")
+
+##to match predator and bacteria identifier in the observed trait data to the initial trait data and 16s-rRNA counts
+Traits_obs[,"prey_history"] <- replace(Traits_obs[,"prey_history"], Traits_obs[,"prey_history"] == "Ancestral Bacteria", c("ANC") )
+Traits_obs[,"prey_history"] <- replace(Traits_obs[,"prey_history"], Traits_obs[,"prey_history"] == "Evolved Bacteria", c("EVO") )
+Traits_obs[,"predator_history"] <- replace(Traits_obs[,"predator_history"], Traits_obs[,"predator_history"] == "Ancestral Ciliates", c("ANC") )
+Traits_obs[,"predator_history"] <- replace(Traits_obs[,"predator_history"], Traits_obs[,"predator_history"] == "Evolved Ciliates", c("EVO") )
+Traits_obs[,"replicate"]<-as.character(Traits_obs[,"replicate"]) 
+##create indices that will later help to align predicted trait distributions with measured trait distributions
+Traits_obs <- Traits_obs %>% 
+  group_by(replicate, prey_history, predator_history, time_days) %>% 
+  mutate(indices = c(1:24)) %>% 
+  ungroup()
+
+```
+
+3) StrainID and Species names are extracted from the 16s rRNA sequencing data
+
+```{r}
+StrainID <- Species_counts[1:24,1] #StrainID
+SpeciesNames <- paste(Species_counts[1:24,2],Species_counts[1:24,3], sep = " ") #SpeciesNames
+
+```
+
+## Start Analysis
+
+1) Calculate relative species frequencies from the 16s-rRNA counts
+2) Initial trait data is joined with species frequencies in one data frame
+```{r}
+freq_counts <- Species_counts %>% 
+  group_by(replicate, prey_history, predator_history, time_days) %>% 
+  mutate(freq = count/sum(count))# %>%  #This is the crucial info for Bootstrap Traits
+#join initial ancestral and evolved traits
+init_traits <- rbind(ANC_Trait, EVO_Trait)
+
+#join initial ancestral and evolved traits with species frequencies
+Prediciton <- right_join(freq_counts, init_traits)
+
+```
+
+## Prediction vs Observation
+
+Relative frequencies of each species in each replicate on the sampling days 8, 28 and 60 were computed.
+These frequencies are now used as probabilities to sample from the initial trait pairs in samples of size 24.
+This is done 100x for each combination of microcosm, prey_history, predator_history and time_days with separate traits for ancestral and evolved prey.
+The resulting data frame is then combined with a data frame containing the measured samples, so that the 24 values of prediction per 'bootstrapped' sample are aligned with the 24 measured values. Consequently, the median of the predicted and observed samples are calculated and for each the ratio between observation and prediction is calculated (termed "deviation ratio").
+
+
+```{r, message=FALSE}
+for( i in 1:100){
+  
+  Pred_Trait <- Prediciton %>% 
+    filter(time_days %in% c(8,28,60) & predator_history %in% c("ANC","EVO")) %>% #filter data on days 8, 28 and 60
+    group_by(replicate, prey_history, predator_history, time_days) %>% #group according to samples
+    reframe(bs_df = sample(x= defence, size=24, replace=TRUE, prob=freq),#create the sample according to initial traits and species frequencies (also called "prediction")
+              indices = c(1:24)) %>% #add indices 1 to 24
+    ungroup() %>% 
+    mutate(bs_growth = init_traits$growth[match(.$bs_df,init_traits$defence)])#match sampled defence values with their corresponding carrying capacity values 
+ 
+  
+  Joined_traits <- right_join(Pred_Trait, Traits_obs)  #combine "predictions" and measurements
+  Joined_traits[,c("bs_df","defence" )] <-  replace(Joined_traits[,c("bs_df","defence" )], Joined_traits[,c("bs_df","defence" )] > 0, c(NA)) #replace defence values > 0 with NA, we consider these values biologically implausible. 
+  
+  Joined_traits <- Joined_traits %>%                                                     #calculate median trait values for predicted and observed traits
+    group_by(replicate, prey_history, predator_history, time_days) %>% 
+    reframe( predicted.median.def = median(bs_df, na.rm = TRUE),
+             predicted.median.growth = median(bs_growth, na.rm = TRUE),
+             observed.median.def = median(defence, na.rm = TRUE),
+             observed.median.growth = median(growth, na.rm = TRUE),
+             ) %>% #calculate ratio between predicted and oserved traits
+    mutate(ratio_predicted_observed_df = observed.median.def/predicted.median.def,
+           ratio_predicted_observed_growth = observed.median.growth/predicted.median.growth) 
+    
+
+
+  
+  if(i<2)
+  {
+    
+    simulated_median <- rep( i, dim(Joined_traits)[1])
+    prediction.vs.observed <- cbind(Joined_traits, simulated_median)
+
+  } else {
+    simulated_median <- rep( i, dim(Joined_traits)[1])
+    joined_traits <- cbind(Joined_traits, simulated_median )
+    
+    prediction.vs.observed  <- rbind(prediction.vs.observed,joined_traits)
+  }
+  
+}
+
+
+```
+
+Now the data is tidied up by re-naming variable values and setting the correct variable  classes
+
+```{r}
+prediction.vs.observed <- prediction.vs.observed %>% 
+  mutate(prey_history = str_replace_all(prey_history, c("ANC" = "Anc_prey", "EVO" = "Evo_prey")),
+         predator_history = str_replace_all(predator_history, c("ANC" = "Anc_predator", "EVO" = "Evo_predator")))
+
+prediction.vs.observed$replicate <- as.factor(prediction.vs.observed$replicate)
+prediction.vs.observed$prey_history <- as.factor(prediction.vs.observed$prey_history)
+prediction.vs.observed$predator_history <- as.factor(prediction.vs.observed$predator_history)
+```
+
+Deviation ratios are log-transform to make them easier to interpret (i.e. deviations in both directions are equally scaled) 
+
+```{r}
+prediction.vs.observed  <- prediction.vs.observed %>% 
+  mutate(ratio_predicted_observed_df = log(ratio_predicted_observed_df),
+          ratio_predicted_observed_growth = log(ratio_predicted_observed_growth))
+
+```
+
+Now the median ratio of all 100 predictions per microcosm and sampling day is calculated
+```{r}
+##
+prediction.observed.median <- prediction.vs.observed %>% 
+  group_by(replicate,prey_history,predator_history,time_days) %>% 
+  reframe(median_ratio_df = mean(ratio_predicted_observed_df),
+  median_ratio_growth = mean(ratio_predicted_observed_growth))
+```
+
+
+## Assess evolutionary contributions over time with a linear model
+
+1) Distinguishable replicate names and correct variable classes are set
+
+```{r}
+prediction.vs.observed$replicate <- as.factor(prediction.vs.observed$replicate)
+prediction.vs.observed$prey_history <- as.factor(prediction.vs.observed$prey_history)
+prediction.vs.observed$predator_history <- as.factor(prediction.vs.observed$predator_history)
+prediction.vs.observed$time_days <- as.numeric(prediction.vs.observed$time_days)
+
+prediction.vs.observed <- prediction.vs.observed %>% 
+  group_by(predator_history, prey_history, replicate ) %>% 
+  mutate(Replicate_unique = cur_group_id() ) %>% 
+  ungroup()
+
+prediction.vs.observed$Replicate_unique <- as.factor(prediction.vs.observed$Replicate_unique)
+```
+
+2) A normal linear model is run for each trait to derive slopes + intercept for each microcosm. 
+
+Model for carrying capacity: 
+```{r}
+ratio_model_growth <- lm(ratio_predicted_observed_growth ~ Replicate_unique/time_days -1 ,data = prediction.vs.observed)
+```
+
+Model for defence:
+```{r}
+ratio_model_df <- lm(ratio_predicted_observed_df ~ Replicate_unique/time_days -1 ,data = prediction.vs.observed)
+```
+
+
+3) Model output for both traits:
+
+```{r}
+treatment <- prediction.vs.observed %>% 
+  dplyr::select(prey_history,predator_history,replicate, Replicate_unique) %>% 
+  group_by(prey_history,predator_history,replicate, Replicate_unique) %>% 
+  mutate(replicate = str_replace_all(replicate, c("1" = "A", "3" = "B", "5" = "C"))) %>% 
+  group_keys() %>% 
+  arrange(as.numeric(Replicate_unique))
+
+tf_ratio_model_growth <- cbind(treatment,summary(ratio_model_growth)$coefficients) 
+tf_ratio_model_growth <- tf_ratio_model_growth %>% 
+  mutate( "Pr(>|t|)" = formatC(tf_ratio_model_growth[,8], format = "e", digits = 3),
+          type = c(rep("intercept",12),rep("slope",12))) %>% 
+  flextable()
+
+tf_ratio_model_growth
+
+save_as_image(tf_ratio_model_growth,"../Results/SS_Evo_lm_carr_cap.png")
+
+
+tf_ratio_model_df <- cbind(treatment,summary(ratio_model_df)$coefficients)
+tf_ratio_model_df <- tf_ratio_model_df%>% 
+  mutate( "Pr(>|t|)" = formatC(tf_ratio_model_df[,8], format = "e", digits = 3),
+          type = c(rep("intercept",12),rep("slope",12)))%>% 
+  flextable()
+
+tf_ratio_model_df
+
+save_as_image(tf_ratio_model_df,"../Results/SS_Evo_lm_defence.png")
+
+```
+
+4) Check of model assumptions:
+
+```{r}
+#assumptions carrying capacity
+plot(ratio_model_growth)
+
+#assumptions defence
+plot(ratio_model_df)
+```
+
+```{r}
+type <- c(rep("intercept",12),rep("slope",12))
+
+groups <- prediction.vs.observed %>% 
+  group_by(predator_history, prey_history, replicate, Replicate_unique ) %>% 
+  group_keys()
+
+#for growth capacity
+result_growth <- as.data.frame(coef(summary(ratio_model_growth)))
+regressions_growth <- cbind(type, result_growth)
+regression_results_growth <- cbind(groups, regressions_growth)
+row.names(regression_results_growth)<- NULL
+
+#mean estimates + standard deviation 
+mean_estimates_growth <- regression_results_growth %>% 
+  group_by(type) %>% 
+  reframe(mean_estimate= mean(Estimate),
+          sd_estimate= sd(Estimate))
+
+#for defence
+result_df <- as.data.frame(coef(summary(ratio_model_df)))
+regressions_df <- cbind(type, result_df)
+regression_results_df <- cbind(groups, regressions_df) 
+row.names(regression_results_df)<- NULL
+
+#mean estimates + standard deviation 
+mean_estimates_df <- regression_results_df %>% 
+  group_by(type) %>% 
+  reframe(mean_estimate= mean(Estimate),
+          sd_estimate= sd(Estimate))
+
+
+```
+
+## Visualise analysis (Fig. 5)
+
+1) Prepare lables
+
+```{r}
+prey.labs <- c("ancestral prey", "evolved prey")
+names(prey.labs) <- c("Anc_prey", "Evo_prey")
+
+predator.labs <-  c("ancestral ciliates", "evolved ciliates")
+names(predator.labs) <- c("Anc_predator", "Evo_predator")
+```
+
+2) Plot deviation ratios for carrying capacity:
+
+```{r, echo=FALSE, fig.dim=c(10,10)}
+ggplot(data= prediction.vs.observed, aes(x = time_days ))+
+  geom_violin(aes(x = time_days, y = ratio_predicted_observed_growth, colour = replicate, group = interaction(time_days,replicate)), position = position_dodge(width = 14), draw_quantiles = 0.5, scale = "width", width = 13.0)+
+  geom_smooth(aes(y = ratio_predicted_observed_growth, colour = replicate), method = "lm", linewidth = 0.8, se = TRUE, linetype = "twodash", alpha = 0.3)+
+  
+  geom_abline(intercept = 0,slope = 0, linetype = "dashed")+
+  
+  scale_colour_manual(breaks = c(1,3,5), values = c("#0072B2", "#D55E00", "#009E73"), guide = "none")+
+  scale_x_continuous(breaks = c(0,8,28,60))+
+  facet_grid(predator_history ~ prey_history  ,labeller = labeller(prey_history = prey.labs, predator_history = predator.labs))+
+  labs( subtitle = "carrying capacity", x = "time [days]", y= "log[median observed/median prediction]")+
+  ylim(-1.5,3)+
+  
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 18),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "black"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 12, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(), 
+         axis.line = element_line(colour = "black"))
+ggsave("SS_vs_Evo_ratio_car_cap.jpg", device = "jpg", path = "../Results", width = 450, height = 320,  units = "mm" )
+```
+
+3) Plot deviation ratios for defence:
+
+```{r, echo=FALSE, fig.dim=c(10,10)}
+ggplot(data= prediction.vs.observed, aes(x = time_days ))+
+  geom_violin(aes(x = time_days, y = ratio_predicted_observed_df, colour = replicate, group = interaction(time_days,replicate)), position = position_dodge(width = 14), draw_quantiles = 0.5, scale = "width", width = 13.0)+
+  geom_smooth(aes(y = ratio_predicted_observed_df, colour = replicate), method = "lm", linewidth = 0.8, se = TRUE, linetype = "twodash", alpha = 0.3)+
+  
+  geom_abline(intercept = 0,slope = 0, linetype = "dashed")+
+  
+  scale_colour_manual(breaks = c(1,3,5), values = c("#0072B2", "#D55E00", "#009E73"), guide = "none")+
+  scale_x_continuous(breaks = c(0,8,28,60))+
+  facet_grid(predator_history ~ prey_history  ,labeller = labeller(prey_history = prey.labs, predator_history = predator.labs))+
+  labs( subtitle = "defence", x = "time [days]", y= "log[median observed/median prediction]")+
+  ylim(-1.5,3)+
+  
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 18),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "black"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 12, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(), 
+         axis.line = element_line(colour = "black"))
+
+ggsave("SS_vs_Evo_ratio_def.jpg", device = "jpg", path = "../Results", width = 450, height = 320,  units = "mm" )
+```
+
+
+## Alternative visualisation (Extended Data Fig. X)
+
+Plotting predicted vs observed trait distributions
+
+```{r}
+backgrounds <- list(NULL,element_blank())
+texts<- list(NULL,element_blank())
+disabled_strip <- strip_nested(
+  background_x = backgrounds,
+  text_x = texts,
+  by_layer_x = TRUE)
+```
+
+For carrying capacity:
+
+```{r, echo=FALSE, fig.dim=c(10,8)}
+prediction.vs.observed %>% 
+  group_by(replicate,prey_history,predator_history,time_days) %>% 
+  reframe(predicted.sd.growth = sd(predicted.median.growth),
+          predicted.median.growth = mean(predicted.median.growth),
+          
+          observed.median.growth = mean(observed.median.growth)) %>% 
+
+
+ggplot( )+
+  geom_point(mapping = aes( x = predicted.median.growth, y = observed.median.growth,  shape = interaction(predator_history,time_days), colour = interaction(prey_history,replicate), fill=interaction(prey_history,replicate)),size = 4, stroke = 1.6)+
+  geom_path(mapping =aes(x = predicted.median.growth, y = observed.median.growth), arrow = arrow(length=unit(0.3,"cm"),type = "closed",angle = 20), colour = "#000000", linewidth = 0.8) +
+  geom_errorbarh(aes(y = observed.median.growth, xmax = predicted.median.growth + predicted.sd.growth, xmin = predicted.median.growth -  predicted.sd.growth))+
+  
+  scale_shape_manual("Median on day\n of experiment", breaks = c("Anc_predator.8","Anc_predator.28","Anc_predator.60","Evo_predator.8", "Evo_predator.28","Evo_predator.60"), values = c(1,21,19,2,24,17) ,guide = "none")+
+  scale_colour_manual(breaks = c("Anc_prey.1","Evo_prey.1","Anc_prey.3","Evo_prey.3","Anc_prey.5","Evo_prey.5"), values = c("#7cac00e6","#c87cffff","#7cac00e6", "#00bec4ff","#7cac00e6","#f8776eff"),guide = "none")+
+  scale_fill_manual(breaks = c("Anc_prey.1","Evo_prey.1","Anc_prey.3","Evo_prey.3","Anc_prey.5","Evo_prey.5"), values = c("#CCCCCC","#CCCCCC","#CCCCCC", "#CCCCCC","#CCCCCC","#CCCCCC"),guide = "none")+
+
+  facet_nested(predator_history ~ prey_history + replicate, labeller = labeller(prey_history = prey.labs, predator_history = predator.labs), strip = disabled_strip)+
+  
+  xlim(0,0.8)+
+  ylim(0,0.8)+
+  geom_abline()+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 16),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "black"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 12, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(), 
+         axis.line = element_line(colour = "black"))
+
+#PDF
+ggsave("SS_vs_Evo_Community_trajecotries_car_cap.pdf", device = "pdf", path = "../Results", width = 450, height = 200,  units = "mm" )
+ggsave("SS_vs_Evo_Community_trajecotries_car_cap.jpg", device = "jpg", path = "../Results", width = 450, height = 200,  units = "mm" )
+```
+
+For defence:
+
+```{r, echo=FALSE, fig.dim=c(10,8)}
+
+prediction.vs.observed %>% 
+  group_by(replicate,prey_history,predator_history,time_days) %>% 
+  reframe(predicted.sd.def = sd(predicted.median.def),
+          predicted.median.def = mean(predicted.median.def),
+          observed.median.def = mean(observed.median.def)) %>% 
+
+
+ggplot( )+
+  geom_point(mapping = aes( x = predicted.median.def, y = observed.median.def,  shape = interaction(predator_history,time_days), colour = interaction(prey_history,replicate), fill=interaction(prey_history,replicate)),size = 4, stroke = 1.6)+
+  geom_path(mapping =aes(x = predicted.median.def, y = observed.median.def), arrow = arrow(length=unit(0.3,"cm"),type = "closed",angle = 20), colour = "#000000", linewidth = 0.8) +
+  geom_errorbarh(aes(y = observed.median.def, xmax = predicted.median.def + predicted.sd.def, xmin = predicted.median.def -  predicted.sd.def))+
+  
+  scale_shape_manual("Median on day\n of experiment", breaks = c("Anc_predator.8","Anc_predator.28","Anc_predator.60","Evo_predator.8", "Evo_predator.28","Evo_predator.60"), values = c(1,21,19,2,24,17) ,guide = "none")+
+  scale_colour_manual(breaks = c("Anc_prey.1","Evo_prey.1","Anc_prey.3","Evo_prey.3","Anc_prey.5","Evo_prey.5"), values = c("#7cac00e6","#c87cffff","#7cac00e6", "#00bec4ff","#7cac00e6","#f8776eff"),guide = "none")+
+  scale_fill_manual(breaks = c("Anc_prey.1","Evo_prey.1","Anc_prey.3","Evo_prey.3","Anc_prey.5","Evo_prey.5"), values = c("#CCCCCC","#CCCCCC","#CCCCCC", "#CCCCCC","#CCCCCC","#CCCCCC"),guide = "none")+
+
+  facet_nested(predator_history ~ prey_history + replicate, labeller = labeller(prey_history = prey.labs, predator_history = predator.labs), strip = disabled_strip)+
+  
+  xlim(-3.2,0)+
+  ylim(-3.2,0)+
+  geom_abline()+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 16),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "black"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 12, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+         panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(), 
+         axis.line = element_line(colour = "black"))
+
+#PDF
+ggsave("SS_vs_Evo_Community_trajecotries_def.pdf", device = "pdf", path = "../Results", width = 450, height = 200,  units = "mm" )
+ggsave("SS_vs_Evo_Community_trajecotries_def.jpg", device = "jpg", path = "../Results", width = 450, height = 200,  units = "mm" )
+```

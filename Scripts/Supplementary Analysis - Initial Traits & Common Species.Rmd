@@ -1,0 +1,259 @@
+---
+title: "Supplementary Analysis - Initial Traits & Common Species"
+author: "Julius"
+date: "2024-01-25"
+output: html_document
+keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Load packages
+
+```{r, message=FALSE}
+library(tidyverse)
+library(data.table)
+library(patchwork)
+library(flextable)
+```
+
+```{r}
+set_flextable_defaults(
+  font.size = 10, theme_fun = theme_vanilla,
+  padding = 6,
+  font.family = "Arial")
+```
+
+
+## Load data
+
+```{r message=FALSE}
+counts_16_seq<-read_csv("../Data/sequencing_counts and metadata.csv", )
+EVO_Trait <- read_tsv("../Data/Evolved Initial Traits AMiGA.txt")
+ANC_Trait <- read_tsv("../Data/Ancestral Initial Traits AMiGA.txt")
+```
+
+## Calculate relative frequencies from 16s rRNA amplicon-sequencing counts
+
+```{r}
+rel_frequencies <- counts_16_seq %>% 
+  mutate(prey_history = str_replace_all(prey_history, c("ANC" = "Anc.prey", "EVO" = "Evo.prey")),
+         predator_history = str_replace_all(predator_history, c("ANC" = "Anc.predator", "EVO" = "Evo.predator"))) %>% 
+  filter(!time_days == 0) %>% 
+   
+  group_by(prey_history, predator_history, replicate, time_days)  %>% 
+  mutate(rel_abundance = count/sum(count)) %>% 
+  dplyr::select(-sample, -transfer_volume, -old_sample_number)%>%
+  ungroup()
+```
+
+## Rare & common species in the bacterial communities
+
+Identify rare species that have an average (across all time points) relative abundance below 1% in a community.
+Theses rare species are selected and the fraction of microcosm in which they were is given. A value of 1 indicates they were rare (<1%) in all of 18 microcosms. 
+
+```{r}
+rare_species <- rel_frequencies %>% 
+  group_by(strainID,prey_history, predator_history, replicate) %>% 
+  reframe(mean_rel_abundance = mean(rel_abundance)) %>% 
+  filter(mean_rel_abundance < 0.01) %>% 
+  group_by(strainID) %>% 
+  reframe(frac_replicates_rare = n()/18)
+
+ft_rare_species <- flextable(rare_species)
+ft_rare_species <- set_caption(ft_rare_species, "proportion of microcosms with species <1%", 
+  style = "Table Caption")
+
+ft_rare_species
+
+save_as_image(ft_rare_species,"../Results/rare_species.png")
+
+```
+16/24 can be considered rare in most microcosms.
+
+
+Conversely we identify species that are common (>1%).
+
+
+```{r}
+common_species <- rel_frequencies %>% 
+  group_by(strainID,prey_history, predator_history, replicate) %>% 
+  reframe(mean_rel_abundance = mean(rel_abundance)) %>% 
+  filter(mean_rel_abundance > 0.01) %>% 
+  group_by(strainID) %>% 
+  reframe(frac_replicates_common = n()/18)
+
+ft_common_species <- flextable(common_species)
+ft_common_species <- set_caption(ft_common_species, "proportion of microcosms with species >1%", 
+  style = "Table Caption")
+
+ft_common_species
+
+save_as_image(ft_common_species,"../Results/common_species.png")
+```
+8 species can be considered common in most microcosms.
+
+HAMBI-1896 is common in roughly half of the microcosms.
+
+
+Which species are common depending on predator presence? 
+
+We determine the fraction of microcosms with and without predators in which species are common.
+If the resulting value is NA for a predator condition the species is rare in all microcosm of this predator condition.
+
+```{r}
+
+common_species_with_predator <- rel_frequencies %>% 
+  group_by(strainID,prey_history, predator_history, replicate) %>% 
+  reframe(mean_rel_abundance = mean(rel_abundance)) %>% 
+  filter(mean_rel_abundance > 0.01) %>% 
+  group_by(strainID, predator_history) %>% 
+  reframe(frac_replicates_common = n()/6) %>% 
+  pivot_wider(names_from = predator_history, values_from = frac_replicates_common)
+
+ft_common_species_with_predator <- flextable(common_species_with_predator)
+ft_common_species_with_predator <- set_caption(ft_common_species_with_predator, "proportion of microcosms with species >1% depending on predator presence", 
+  style = "Table Caption")
+
+ft_common_species_with_predator
+save_as_image(ft_common_species_with_predator,"../Results/common_species_depending_predator.png")
+```
+
+HAMBI 0105 and 1896 are common in predator presence but rare in predator absence.
+
+How frequent are those species for which we found variants in the meta-genomic data?
+
+```{r}
+ft_species_w_variants <- counts_16_seq %>% 
+  mutate(prey_history = str_replace_all(prey_history, c("ANC" = "Anc.prey", "EVO" = "Evo.prey")),
+         predator_history = str_replace_all(predator_history, c("ANC" = "Anc.predator", "EVO" = "Evo.predator"))) %>% 
+  filter(time_days == 0) %>% 
+  
+  group_by(prey_history, predator_history, replicate, time_days)  %>% 
+  mutate(rel_abundance = count/sum(count)) %>% 
+  dplyr::select(-sample, -transfer_volume, -old_sample_number)%>%
+  ungroup() %>% 
+  filter(predator_history != "no_predator" ) %>% 
+  group_by(strainID) %>% 
+  reframe(mean_rel_abundance = mean(rel_abundance)) %>% 
+  dplyr::filter(strainID  %in% c("HAMBI-1287","HAMBI-1972","HAMBI-1977","HAMBI-2659")) %>% 
+  flextable()
+
+ft_species_w_variants <- set_caption(ft_species_w_variants, "Average rel. abundance of species with detected variants in meta-genomic data", 
+  style = "Table Caption")
+
+ft_species_w_variants
+
+save_as_image(ft_species_w_variants,"../Results/frequency_species_with_variants.png")
+```
+
+## Initial Traits
+
+1) Matching the column names of EVO and ANC Trait to the ones used in 16s-rRNA counts
+```{r}
+##
+colnames(EVO_Trait) <-c("strainID","prey_history", "growth", "pred_treatment", "defence") #, "genus", "species"
+colnames(ANC_Trait) <-c("strainID","prey_history", "growth", "pred_treatment", "defence")#, "genus", "species"
+```
+
+2) Join initial ancestral and evolved traits
+
+```{r}
+
+init_traits <- rbind(ANC_Trait, EVO_Trait)
+
+
+delta_anc_evo <- init_traits %>% 
+  pivot_wider(id_cols = c("strainID"), values_from = c("growth","defence"), names_from = c("prey_history")) %>%
+  reframe(strainID = strainID,
+          delta_df = defence_EVO - defence_ANC,
+          delta_growth = growth_EVO - growth_ANC) %>% 
+print(n=100)
+delta_anc_evo %>% 
+filter( strainID == common_species$strainID)
+
+```
+
+3) Visualise initial traits
+
+```{r, echo=FALSE}
+init_defence <- ggplot(data= init_traits, aes(y = defence, x = reorder(strainID, defence), fill = prey_history))+
+  geom_col(position = "dodge")+
+  scale_fill_discrete(name = "Prey evol. history")+
+  labs(y = "defence \n [log(growth (+)predator/growth (-)predator)]")+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 12),
+         axis.text.x = element_blank(),
+         axis.title = element_text(size = 20),
+         axis.title.x = element_blank(),
+         axis.title.y = element_text( colour = "black"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 10, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"))
+```
+
+```{r, echo=FALSE}
+
+init_growth <- ggplot(data= init_traits, aes(y = growth, x = reorder(strainID, defence), fill = prey_history))+
+  geom_col(position = "dodge")+
+  scale_fill_discrete(name = "Prey evol. history")+
+  labs(y ="growth capacity [optical density]", x = "strainID")+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 12),
+         axis.text.x = element_text( angle = 45,hjust = 1),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "black"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 10, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"))
+
+```
+
+
+```{r,  fig.height=12, fig.width=13}
+
+init_defence /init_growth + plot_layout(guides = "collect")
+
+ggsave("Initial_traits_Anc_Evo.pdf", device = "pdf", path = "../Results", width = 270, height = 270,  units = "mm") 
+```
+
+The same information can be visualised in a trait space between both traits.
+Additionally, we can mark species that are common during the experiment.
+These are the species found above (minus HAMBI-2160, which is only common in one microcosm).
+
+```{r, echo=FALSE, fig.height=10, fig.width=13}
+init_traits %>% 
+ggplot( )+
+  geom_point(aes(y = growth , x = defence, shape = prey_history, fill = strainID),size = 4)+
+  geom_point(data = filter(init_traits,strainID %in% c("HAMBI-1287","HAMBI-1292","HAMBI-1977","HAMBI-1896","HAMBI-0105","HAMBI-1972","HAMBI-2659","HAMBI-1923","HAMBI-0403")), aes(y = growth , x = defence, colour = prey_history), shape = 21, size = 8 , stroke = 1.5 )+
+  geom_line(aes(y =  growth , x = defence, group = strainID))+
+  scale_shape_manual(breaks = c("ANC","EVO"), values= c(21,24))+
+  scale_colour_manual(name = "species > 1% rel. abundance", breaks = c("ANC","EVO"), values= c("red","blue"))+
+  scale_fill_discrete()+
+  guides(fill = guide_legend(override.aes=list(shape=21)))+
+  labs(title = "Initial trait space")+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 12),
+         axis.text.x = element_text( angle = 45,hjust = 1),
+         axis.title = element_text(size = 20),
+         axis.title.y = element_text( colour = "#FF8E7B"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 10, colour = "white", face = "bold"),
+         strip.background = element_rect(color="black", fill="#666699", linewidth=1, linetype="solid"))
+```
+
