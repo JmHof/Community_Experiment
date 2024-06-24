@@ -5,8 +5,9 @@ date: "2024-01-26"
 output: html_document
 ---
 ## Aim
-With this script I pre-process the phenotypic data acquired from clones during the community (mis-)match experiment.
-I also merge the counts data from 16s rRNA sequecning with the corresponding metadata.
+The data I received from the collaborators at University of Turku (Teppo Hiltunen, Shane Hogle) is pre-processed for later analysis.
+Some data was not relevant to the findings presented in the manuscript "Temporal changes in the role of species sorting and evolution determine community dynamics" and these are excluded.
+Further, I also merge the counts data from 16s rRNA sequecning with the corresponding metadata.
 The created files are then saved to be used in further analyses.
 
 ```{r setup, include=FALSE}
