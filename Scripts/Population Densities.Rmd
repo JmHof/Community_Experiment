@@ -21,6 +21,8 @@ library(flextable)
 
 ```
 
+Set flextable defaults:
+
 ```{r}
 set_flextable_defaults(
   font.size = 10, theme_fun = theme_vanilla,
@@ -69,7 +71,7 @@ pop_den_mean <- pred_prey_density %>%
           mean_OD= mean(bacteria_od,na.rm = TRUE)) #calculate prey mean within interval
 ```
 
-## Calculate group means and standard error
+## Calculating group means and standard error
 
 ```{r}
 group_densities<-pop_den_mean %>% 
@@ -83,7 +85,7 @@ group_densities<-pop_den_mean %>%
 
 ## Fitting a linear model
 
-1) add distinguishable replicate names
+1) Add distinguishable replicate names
 
 ```{r}
 pop_den_mean <- pop_den_mean %>% 
@@ -92,7 +94,7 @@ pop_den_mean <- pop_den_mean %>%
   ungroup()
 ```
 
-2) setting correct variable classes
+2) Set correct variable classes
 
 ```{r}
 pop_den_mean$Replicate_unique <- as.factor(as.matrix(pop_den_mean$Replicate_unique))
@@ -107,9 +109,9 @@ pop_den_mean$prey_history <- factor(pop_den_mean$prey_history, levels = c("ances
 
 ```
 
-3) running a linear model via glm() 
+3) Linear model via glm() 
 
-For predator densities:
+Linear model for predator densities:
 
 ```{r}
 mod_den_Pred <- glm(mean_Pred ~ predator_history * prey_history ,family = gaussian(link = "identity"), data = pop_den_mean)
@@ -135,7 +137,9 @@ tf_mod_den_Pred <- set_caption(tf_mod_den_Pred, "GLM - predator densities",
 tf_mod_den_Pred
 
 save_as_image(tf_mod_den_Pred,"../Results/GLM_predator_densiteis.png")
+
 #ANOVA
+
 mod_anova_Pred <- anova(mod_den_Pred, test = "F")
 tf_mod_anova_Pred <- cbind(row.names(mod_anova_Pred[,1:6]), mod_anova_Pred[,1:6])
 colnames(tf_mod_anova_Pred)[1] <- ("variable")
@@ -147,7 +151,9 @@ tf_mod_anova_Pred <- set_caption(tf_mod_anova_Pred, "ANOVA - predator densities"
 tf_mod_anova_Pred
 
 save_as_image(tf_mod_anova_Pred,"../Results/ANOVA_predator_densiteis.png")
+
 #pair-wise comparisons
+
 pair_wise_Pred <-TukeyHSD(aov(mod_den_Pred))
 ft_tukey_pred <- flextable(data.frame(variable = rownames(pair_wise_Pred$`predator_history:prey_history`),pair_wise_Pred$`predator_history:prey_history` ))%>% 
                                 colformat_double(digits = 4)
@@ -159,11 +165,12 @@ ft_tukey_pred
 save_as_image(ft_tukey_pred ,"../Results/pair-wise_predator_densiteis.png")
 
 #letters for multiple comparisons
+
 multcompView::multcompLetters4(aov(mod_den_Pred), pair_wise_Pred)
 ```
 
 
-For prey densities (OD):
+Linear model for prey densities (OD):
 
 ```{r}
 mod_den_OD <- glm(mean_OD ~ predator_history * prey_history ,family = gaussian(link = "identity"), data = pop_den_mean)
@@ -217,9 +224,9 @@ save_as_image(ft_tukey_OD,"../Results/pair-wise_prey_densiteis.png")
 multcompView::multcompLetters4(aov(mod_den_OD), pair_wise_OD)
 ```
 
-## Visualise Density Data
+## Visualise Popuilation Density Data
 
-1) plot mean densities of predator 
+1) Plot mean densities of predator 
 
 ```{r , echo=FALSE}
 
@@ -258,7 +265,7 @@ p_mean_pred <-  pop_den_mean %>%
 ```
 
 
-2) plot mean OD of prey
+2) Plot mean OD of prey
 
 ```{r, echo=FALSE}
 p_mean_prey <- ggplot( )+
@@ -295,7 +302,7 @@ p_mean_prey <- ggplot( )+
 
 ```
 
-3) combine both plots 
+3) Combine both plots 
 
 ```{r, fig.dim=c(10,14)}
 p_mean_pred / p_mean_prey + plot_layout(width = c(2,3)) + plot_annotation( title = "Predator and Prey mean density")
