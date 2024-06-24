@@ -19,6 +19,7 @@ library(ggh4x)
 library(flextable)
 ```
 
+Set flextable defaults:
 
 ```{r}
 set_flextable_defaults(
@@ -40,6 +41,7 @@ OD_96h[,c("gPred_gAlone" )] <-  replace(OD_96h[,c("gPred_gAlone" )], OD_96h[,c("
 ```
 
 2) calculate median traits and corresponding quantiles
+
 ```{r}
 
 Obs_traits_stats <- OD_96h %>% 
