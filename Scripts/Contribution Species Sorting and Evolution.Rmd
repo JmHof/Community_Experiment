@@ -22,7 +22,7 @@ library(lmerTest)
 library(flextable)
 ```
 
-Set flectable defaults:
+Set flextable defaults:
 
 ```{r}
 set_flextable_defaults(
