@@ -22,6 +22,8 @@ library(lmerTest)
 library(flextable)
 ```
 
+Set flectable defaults:
+
 ```{r}
 set_flextable_defaults(
   font.size = 10, theme_fun = theme_vanilla,
@@ -44,7 +46,7 @@ Traits_obs <- read.csv("../derived data/Clone_OD_96h.txt")
 
 ## Data clean-up
 
-Before working with the data it needs to be brought into the right shape.
+The data is filtered and cohesively named.
 
 1) Only the necessary data is selected.
 
@@ -62,9 +64,7 @@ Species_counts[,"replicate"]  <- new_rep[match(Species_counts[,"replicate"], old
 
 ```
 
-2) Variable names and values: 
-
-All information is re-named to be cohesive across all types of data.
+2)  Variable names and levels are re-named to be cohesive across all types of data.
 
 ```{r}
 
@@ -166,7 +166,7 @@ for( i in 1:100){
 
 ```
 
-Now the data is tidied up by re-naming variable values and setting the correct variable  classes
+Now the data is tidied up by re-naming variable values and setting the correct variable classes.
 
 ```{r}
 prediction.vs.observed <- prediction.vs.observed %>% 
@@ -178,7 +178,7 @@ prediction.vs.observed$prey_history <- as.factor(prediction.vs.observed$prey_his
 prediction.vs.observed$predator_history <- as.factor(prediction.vs.observed$predator_history)
 ```
 
-Deviation ratios are log-transform to make them easier to interpret (i.e. deviations in both directions are equally scaled) 
+Deviation ratios are log-transform to make them easier to interpret (i.e. deviations in both directions are equally scaled). 
 
 ```{r}
 prediction.vs.observed  <- prediction.vs.observed %>% 
@@ -383,7 +383,7 @@ ggsave("SS_vs_Evo_ratio_def.jpg", device = "jpg", path = "../Results", width = 4
 ```
 
 
-## Alternative visualisation (Extended Data Fig. X)
+## Alternative visualisation (Extended Data Fig. 10)
 
 Plotting predicted vs observed trait distributions
 
