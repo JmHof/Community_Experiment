@@ -8,4 +8,4 @@ https://gitlab.utu.fi/slhogl/hambiDoubleEvoHi .
 
 The folder "scripts" contains the code used for my analyses. The scripts there draw from the data in the folder "Data" or the "derived data" folder which contains modified data files based on the files in "Data".
 The data available here comprises the files that I (JH) received from the collaborators at the University of Turku and constitute all data necessary for my analyses.
-Scripts are saved as rmarkdown files and are designed to work as html reports. If the repository is downloaded/cloned and code is run essential results (plots, tables) will be saved in the "Results" folder.
+Scripts are saved as rmarkdown files and are designed to also work as html reports. If the repository is downloaded/cloned and code is run essential results (plots, tables) will be saved in the "Results" folder.
