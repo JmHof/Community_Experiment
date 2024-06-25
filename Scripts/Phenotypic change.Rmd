@@ -64,7 +64,9 @@ tests_defence <- OD_96h %>%
   mutate(replicate = str_replace_all(replicate, c("1" = "A", "3" = "B", "5" = "C"))) %>% 
   filter(experiment_day %in% c(8,60)) %>% 
   group_by(prey,predator,replicate) %>% 
-  reframe(p.value = kruskal.test(gPred_gAlone ~ experiment_day)$p.value) %>% 
+  reframe(p.value = kruskal.test(gPred_gAlone ~ experiment_day)$p.value,
+          rank_sum_statistic = kruskal.test(gPred_gAlone ~ experiment_day)$statistic,
+          Df = kruskal.test(gPred_gAlone ~ experiment_day)$parameter) %>% 
   ungroup() %>% 
   mutate(p.value_corr = p.adjust(p.value,method = "BH"))
 
@@ -82,7 +84,9 @@ tests_carrying_cap <- OD_96h %>%
   mutate(replicate = str_replace_all(replicate, c("1" = "A", "3" = "B", "5" = "C"))) %>% 
   filter(experiment_day %in% c(8,60)) %>% 
   group_by(prey,predator,replicate) %>% 
-  reframe(p.value = kruskal.test(cloneOD ~ experiment_day)$p.value) %>% 
+  reframe(p.value = kruskal.test(cloneOD ~ experiment_day)$p.value,
+          rank_sum_statistic = kruskal.test(cloneOD ~ experiment_day)$statistic,
+          Df = kruskal.test(cloneOD ~ experiment_day)$parameter)) %>% 
   ungroup() %>% 
   mutate(p.value_corr = p.adjust(p.value,method = "BH")) 
 
