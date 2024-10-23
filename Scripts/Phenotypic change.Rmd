@@ -17,9 +17,9 @@ library(gridExtra)
 library(data.table)
 library(ggh4x)
 library(flextable)
+library(ggrepel)
 ```
 
-Set flextable defaults:
 
 ```{r}
 set_flextable_defaults(
@@ -41,7 +41,6 @@ OD_96h[,c("gPred_gAlone" )] <-  replace(OD_96h[,c("gPred_gAlone" )], OD_96h[,c("
 ```
 
 2) calculate median traits and corresponding quantiles
-
 ```{r}
 
 Obs_traits_stats <- OD_96h %>% 
@@ -86,7 +85,7 @@ tests_carrying_cap <- OD_96h %>%
   group_by(prey,predator,replicate) %>% 
   reframe(p.value = kruskal.test(cloneOD ~ experiment_day)$p.value,
           rank_sum_statistic = kruskal.test(cloneOD ~ experiment_day)$statistic,
-          Df = kruskal.test(cloneOD ~ experiment_day)$parameter)) %>% 
+          Df = kruskal.test(cloneOD ~ experiment_day)$parameter) %>% 
   ungroup() %>% 
   mutate(p.value_corr = p.adjust(p.value,method = "BH")) 
 
@@ -136,20 +135,31 @@ disabled_strip <- strip_nested(
   text_x = texts,
   by_layer_x = TRUE)
 
+
+Obs_traits_stats$day <- Obs_traits_stats$experiment_day
+Obs_traits_stats$day[Obs_traits_stats$day == 28] <- ""
+
 ggplot(data = Obs_traits_stats) +
-  geom_point( mapping = aes(x = median_df, y = median_growth, shape = interaction(predator,experiment_day), colour = interaction(prey,replicate), fill=interaction(prey,replicate) ),size = 4, stroke = 1.6)+
-  geom_path(mapping =aes(x = median_df, y = median_growth), arrow = arrow(length=unit(0.3,"cm"),type = "closed",angle = 20), colour = "#000000", linewidth = 0.8) +
-  geom_errorbar(mapping =aes(x = median_df, y = median_growth, ymin = median_growth_quant_1, ymax = median_growth_quant_2), width=.00, linewidth = 0.6)+
-  geom_errorbarh(mapping =aes( y = median_growth, xmin = median_df_quant_1, xmax = median_df_quant_2), height=.00, linewidth = 0.6)+
+  geom_point( mapping = aes(x = median_df, y = median_growth, shape = interaction(predator,experiment_day), colour = interaction(prey,replicate), fill=interaction(prey,replicate) ),size = 4.05, stroke = 1.6)+
+    geom_label_repel( aes(x = median_df, y = median_growth, label = day),
+                  box.padding   = 0.4, 
+                  point.padding = 0.4,
+                  segment.color = '#566573',
+                  min.segment.length = 0.1,
+                  label.size = 0.4,
+                  label.padding = 0.15) +
+  geom_path(mapping =aes(x = median_df, y = median_growth), colour = "#000000", linewidth = 0.8, alpha = 0.7) +
+  geom_errorbar(mapping =aes(x = median_df, y = median_growth, ymin = median_growth_quant_1, ymax = median_growth_quant_2), width=.00, linewidth = 0.6, alpha = 0.6,colour = "#696969")+
+  geom_errorbarh(mapping =aes( y = median_growth, xmin = median_df_quant_1, xmax = median_df_quant_2), height=.00, linewidth = 0.6, alpha = 0.7,colour = "#696969")+
   facet_nested(predator ~ prey +replicate , labeller = labeller(prey = prey.labs, predator = predator.labs), strip = disabled_strip)+
   
   
-  scale_shape_manual("Median on day\n of experiment", breaks = c("Ancestral Ciliates.8","Ancestral Ciliates.28","Ancestral Ciliates.60","Evolved Ciliates.8", "Evolved Ciliates.28","Evolved Ciliates.60"), values = c(1,21,19,2,24,17) ,guide = "none")+
-  scale_colour_manual(breaks = c("Ancestral Bacteria.1","Evolved Bacteria.1","Ancestral Bacteria.3","Evolved Bacteria.3","Ancestral Bacteria.5","Evolved Bacteria.5"), values = c("#7cac00e6","#c87cffff","#7cac00e6", "#00bec4ff","#7cac00e6","#f8776eff"),guide = "none")+
-  scale_fill_manual(breaks = c("Ancestral Bacteria.1","Evolved Bacteria.1","Ancestral Bacteria.3","Evolved Bacteria.3","Ancestral Bacteria.5","Evolved Bacteria.5"), values = c("#CCCCCC","#CCCCCC","#CCCCCC", "#CCCCCC","#CCCCCC","#CCCCCC"),guide = "none")+
+  scale_shape_manual("Median on day\n of experiment", breaks = c("Ancestral Ciliates.8","Ancestral Ciliates.28","Ancestral Ciliates.60","Evolved Ciliates.8", "Evolved Ciliates.28","Evolved Ciliates.60"), values = c(19,19,19,17,17,17) ,guide = "none")+
+  scale_colour_manual(breaks = c("Ancestral Bacteria.1","Evolved Bacteria.1","Ancestral Bacteria.3","Evolved Bacteria.3","Ancestral Bacteria.5","Evolved Bacteria.5"), values = c("#7ead05","#c67cff","#7ead05", "#00bec4","#7ead05","#f8776e"),guide = "none")+
+  scale_fill_manual(breaks = c("Ancestral Bacteria.1","Evolved Bacteria.1","Ancestral Bacteria.3","Evolved Bacteria.3","Ancestral Bacteria.5","Evolved Bacteria.5"), values = c("#7ead05","#c67cff","#7ead05", "#00bec4","#7ead05","#f8776e"),guide = "none")+
   
-  labs( x = "defence [log( growth with predator / growth alone )]", y = "growth capacity [optical density]")+
-  xlim(-3.2,0)+
+  labs( x = "defence [log( growth with predator / growth alone )]", y = "carrying capacity [optical density]")+
+  xlim(-2.8,0)+
   ylim(0,0.75)+
   theme_bw()+
   theme( plot.title = element_text(size = 20, face = "bold"),
@@ -166,7 +176,12 @@ ggplot(data = Obs_traits_stats) +
          panel.grid.minor = element_blank(), 
          axis.line = element_line(colour = "black"))  
 
-ggsave("Phenotypic_change_d8_d60.jpg", device = "jpg", path = "../Results", width = 450, height = 200,  units = "mm" )
+#ggsave("Phenotypic_change_d8_d60.jpg", device = "jpg", path = "../Results", width = 450, height = 200,  units = "mm" )
+ggsave("Phenotypic_change_d8_d60.pdf", device = "pdf", path = "../Results", width = 450, height = 200,  units = "mm" )
+
+#, arrow = arrow(length=unit(0.35,"cm"),type = "closed",angle = 10)
+#  scale_shape_manual("Median on day\n of experiment", breaks = c("Ancestral Ciliates.8","Ancestral Ciliates.28","Ancestral Ciliates.60","Evolved Ciliates.8", "Evolved Ciliates.28","Evolved Ciliates.60"), values = c(1,21,19,2,24,17) ,guide = "none")
+#scale_fill_manual(breaks = c("Ancestral Bacteria.1","Evolved Bacteria.1","Ancestral Bacteria.3","Evolved Bacteria.3","Ancestral Bacteria.5","Evolved Bacteria.5"), values = c("#CAFF70","#FFBBFF","#CAFF70", "#97FFFF","#CAFF70","#FFA500"),guide = "none")
 ```
 
 ## Visualise overall trait distribution

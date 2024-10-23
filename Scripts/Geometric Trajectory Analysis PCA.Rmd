@@ -25,8 +25,6 @@ library(funrar)
 library(flextable)
 ```
 
-Set flextable defaults:
-
 ```{r}
 set_flextable_defaults(
   font.size = 10, theme_fun = theme_vanilla,
@@ -35,20 +33,20 @@ set_flextable_defaults(
 ```
 
 
-## Load 16s rRNA amplicon data.
+## Load frequency data
 
-The file contains species counts from 16s rRNA amplicon sequencing.
+The file contains species frequencies from 16s rRNA amplicon sequencing.
 
 ```{r, message=FALSE}
 counts_16_seq<-read_csv("../Data/sequencing_counts and metadata.csv")
 ```
 ## Aim of Analysis
 
-The aim of this analysis is to identify differences and patterns in the compositional trajectories of communities throughout the experiment. Therefore a Principal coordinate Analysis on the Aitchisons distance between communities at all sampling time points is performed. For this analysis microcosms without predators are excluded because these were sampled in less frequent intervals. We perform geometric analysis of these trajectories and estimate the speed of compositional change by calculating the segment length between data points of each microcosm on consecutive sampling days.
+The aim of this analysis is to identify differences and patterns in the compositional trajectories of communities throughout the experiment. Therefore a Principal coordinate Analysis on the Aitchisons distance between communities at all sampling time points is performed. For this analysis microcosms without predators are excluded because these were sampled in less frequent intervals. Here, wWe perform geometric analysis of trajectories from predator containing microcosms and estimate the speed of compositional change by calculating the segment length between data points of each microcosm on consecutive sampling days.
 
 ## Re-arranging data for trajectory analysis
 
-First the variable levels for prey and predatory history are re-named.
+First the values for prey and predatory history are re-named.
 Then the data of interest is selected, i.e. data from samples without predators are removed and data from day 20 of the experiment is removed because it is not complete for all samples.
 Columns "full_species" for the full species name and "treatment" for the combinations of predator and prey history are created.
 Lastly the data is brought in shape for the following analyses.
@@ -75,7 +73,7 @@ frequencies <- counts_16_seq %>%
 
 Some information is extracted or added to the data to allow for easier annotation later on.
 
-1) Each replicate is assigned a distinct number
+1) each replicate is assigned a distinct number
 ```{r}
 replicates <-frequencies %>% 
   reframe(sites = apply(., 1, function(x) paste(x["treatment"],x["replicate"], sep = "_")),) %>% 
@@ -114,7 +112,7 @@ sample_names_all <- frequencies %>%
 
 1) First, zeros are replaced by a Bayesian-multiplicative replacement strategy that preserves the ratios between the non-zero components and amplicon counts are transformed to relative values based on the total counts per sample.
 
-Furthermore, the amplicon-counts are then mean centred and log transformed (clr). The Aitchison distance is the euclidean distance between these clr transformed counts, so that later the euclidean distance between the transformed counts can be calculated to yield the Aitchison distance.
+Furthermore, the amplicon-counts are then transformed as the Aitchison distance is the euclidean distance between samples of mean centred log transformed (clr) counts.
 
 ```{r}
 trans_count_pred <- zCompositions::cmultRepl(frequencies[,4:27], output = "prop")
@@ -123,10 +121,9 @@ trans_count_pred_clr <- compositions::clr(trans_count_pred)
 
 ```
 
-2) Principal Component Analysis is performed based on the CLR transformed data which is equivalent to Principal Coordinate Analysis (PCoA) on  Aitchisons distance. 
+2) Principal Component Analysis is performed based on the CLR transformed data (alternatively on ) equivalent to Principal Coordinate Analysis (PCoA) on  Aitchisons distance). 
 
 ```{r}
-
 PCA <-   prcomp(trans_count_pred_clr )
 
 ```
@@ -212,7 +209,7 @@ ggplot(data = traj_length,aes(x= segments, y = length, group = as.factor(replica
         geom_point(stat='summary', fun=sum, size = 2.5) +
         stat_summary(fun=sum, geom="line")+
         facet_grid(predator_history ~ prey_history, labeller = labeller(prey_history = prey.labs, predator_history = predator.labs))+
-        labs(x = "segment between sampling days" ,y = "segment length")+
+        labs(x = "segment between sampling days" ,y = "community change (1/day)")+
         scale_colour_manual(name = "replicate",breaks = c("Anc.prey.A","Evo.prey.A","Anc.prey.B","Evo.prey.B","Anc.prey.C","Evo.prey.C"), values = c("#7cac00e6","#c87cffff","#7cac00e6", "#00bec4ff","#7cac00e6","#f8776eff"), guide = "none" )+
         scale_shape_manual(breaks = c("Anc.prey.Anc.predator","Evo.prey.Anc.predator","Anc.prey.Evo.predator","Evo.prey.Evo.predator"),values = c(16,16,17,17), guide = "none")+
         scale_x_discrete(labels=c(S1 = "4-8",S2 = "8-12", S3 = "12-16", S4 = "16-24", S5 = "24-28", S6 = "28-32", S7 = "32-36", S8 = "36-40", S9 = "40-44", S10 = "44-48", S11 = "48-52", S12 = "52-58", S13 = "58-60"))+
@@ -262,8 +259,8 @@ save_as_image(ft_traj_direct,"../Results/Directionality_Aitchison_PCA.png")
 
 ## Investigate species impact
 
-1) Species within the community are fitted to the PCoA as environmental variables.
-From this one can conclude whether a certain species significantly impacts placement in the PCoA.
+1) Species withing the community are fitted to the PCoA as environmental variables.
+From this one can conclude whether a certain species had a significant impact on the placement of a sample in the nMDS.
 P-values and coordinates from species with significant impact(p <= 0.001) are extracted. 
 ```{r}
 
@@ -316,11 +313,10 @@ ggsave("Aitchison_PCA_species_impact.jpeg", device = "jpeg", path = "../Results"
 ```
 
 
-## non-metric Permutational Analysis of Variance (PERMANOVA) 
+## PERMANOVA 
 
 1) Some further data wrangling is necessary for this analysis.
 This creates the data frame 'treatment_variables' that is given to the adonis2 function which performs the PERMANOVA.
-
 ```{r, include=FALSE}
 ##create data frame with species frequencies and replicate identifier as rownames
 
@@ -347,8 +343,7 @@ treatment_variables$Replicate_unique <- as.factor(treatment_variables$Replicate_
 
 
 ```
-
-2) Before the PERMANOVA the permutation structure is defined. The microcosms are considered experimental units (plots). They are exposed to different "treatments" and they are sampled repeatedly as time series (within -> "series").
+2) Before the PERMANOVA is run I define the permutation structure. I consider the replicates/microcosms as experimental units (plots). They are exposed to different "treatments" and they are sampled repeatedly as time series (within -> "series").
 
 ```{r}
 Perm_CTRL <- how(within = Within( type = "series"),
@@ -358,9 +353,7 @@ Perm_CTRL <- how(within = Within( type = "series"),
 ```
 
 3) The PERMANOVA is run (here method "euclidean" is used as amplicon-counts are already clr-transformed and this is then equivalent to the Aitchison distance).
-
 ```{r}
-
 distances_test <- adonis2(species ~ prey_history * predator_history  * time_days, method="euclidean", data = treatment_variables, permutations = Perm_CTRL )
 distances_test
 
@@ -375,9 +368,10 @@ save_as_image(ft_PERMANOVA,"../Results/PERMANOVA_Aitchison_PCA.png")
 ```
 
 
+
 4) To validate results of the PERMANOVA the dispersion within the dissimilarity matrix must be checked.
-Equivalent to the precedure above method is set to "euclidean" to get the Aitchisons distance.
-Grouping is done by predator history, prey history and time point. 
+I am doing this based on Bray-Curtis dissimilarity because the PERMANOVA is also based on this.
+Combinations of predator & prey history and time point are grouped because time is an explanatory variable in the PERMANOVA. 
 
 ```{r,warning = FALSE}
 distance_dispersion <- betadisper(vegdist(species, method="euclidean"), factor(paste(treatment_variables$treatment,treatment_variables$time_days))) 

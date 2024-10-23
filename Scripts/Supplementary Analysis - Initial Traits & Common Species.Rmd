@@ -20,8 +20,6 @@ library(patchwork)
 library(flextable)
 ```
 
-Set flextable defaults:
-
 ```{r}
 set_flextable_defaults(
   font.size = 10, theme_fun = theme_vanilla,
@@ -54,8 +52,8 @@ rel_frequencies <- counts_16_seq %>%
 
 ## Rare & common species in the bacterial communities
 
-1) Identify rare species that have an average (across all time points) relative abundance below 1% in a community.
-Theses rare species are selected and the fraction of microcosm in which they were rare is given. A value of 1 indicates they were rare (<1%) in all of 18 microcosms. 
+Identify rare species that have an average (across all time points) relative abundance below 1% in a community.
+Theses rare species are selected and the fraction of microcosm in which they were is given. A value of 1 indicates they were rare (<1%) in all of 18 microcosms. 
 
 ```{r}
 rare_species <- rel_frequencies %>% 
@@ -76,8 +74,30 @@ save_as_image(ft_rare_species,"../Results/rare_species.png")
 ```
 16/24 can be considered rare in most microcosms.
 
+Are these rare species still present at the end of the experiment?
 
-2) Conversely we identify species that are common (>1%).
+```{r}
+rare_species_end <- rel_frequencies %>% 
+  filter(time_days == 60) %>% 
+  group_by(strainID,prey_history, predator_history, replicate) %>% 
+  filter(rel_abundance == 0) %>% 
+  group_by(strainID) %>% 
+  reframe(fraction_replicates_absent = n()/18)
+
+ft_rare_species_end <- rare_species_end %>% 
+  flextable() %>% 
+  set_caption("Proportion of microcosms with species absent at day 60", 
+  style = "Table Caption")
+
+ft_rare_species_end
+
+save_as_image(ft_rare_species_end,"../Results/absent_species_d60.png")
+
+```
+
+
+
+Conversely we identify species that are common (>1%).
 
 
 ```{r}
@@ -101,10 +121,10 @@ save_as_image(ft_common_species,"../Results/common_species.png")
 HAMBI-1896 is common in roughly half of the microcosms.
 
 
-3) Are there species common depending on predator presence? 
+Which species are common depending on predator presence? 
 
-We determine the fraction of microcosms in which species are common grouped by predator status (ancestral, evolved, no predator).
-If the resulting value is NA the species is rare in all microcosm of this predator condition.
+We determine the fraction of microcosms with and without predators in which species are common.
+If the resulting value is NA for a predator condition the species is rare in all microcosm of this predator condition.
 
 ```{r}
 
@@ -126,7 +146,7 @@ save_as_image(ft_common_species_with_predator,"../Results/common_species_dependi
 
 HAMBI 0105 and 1896 are common in predator presence but rare in predator absence.
 
-4) How frequent are those five species for which we found parallel mutations during the experiment?
+How frequent are those species for which we found variants in the meta-genomic data?
 
 ```{r}
 ft_species_w_variants <- counts_16_seq %>% 
@@ -155,7 +175,6 @@ save_as_image(ft_species_w_variants,"../Results/frequency_species_with_variants.
 ## Initial Traits
 
 1) Matching the column names of EVO and ANC Trait to the ones used in 16s-rRNA counts
-
 ```{r}
 ##
 colnames(EVO_Trait) <-c("strainID","prey_history", "growth", "pred_treatment", "defence") #, "genus", "species"
@@ -182,8 +201,6 @@ filter( strainID == common_species$strainID)
 
 3) Visualise initial traits
 
-Defence
-
 ```{r, echo=FALSE}
 init_defence <- ggplot(data= init_traits, aes(y = defence, x = reorder(strainID, defence), fill = prey_history))+
   geom_col(position = "dodge")+
@@ -203,8 +220,6 @@ init_defence <- ggplot(data= init_traits, aes(y = defence, x = reorder(strainID,
          strip.text = element_text(size = 10, colour = "black", face = "bold"),
          strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"))
 ```
-
-Carrying capacity:
 
 ```{r, echo=FALSE}
 
@@ -237,7 +252,7 @@ ggsave("Initial_traits_Anc_Evo.pdf", device = "pdf", path = "../Results", width 
 
 The same information can be visualised in a trait space between both traits.
 Additionally, we can mark species that are common during the experiment.
-These are the species >1% rel. abundance (minus HAMBI-2160, which is only common in one microcosm).
+These are the species found above (minus HAMBI-2160, which is only common in one microcosm).
 
 ```{r, echo=FALSE, fig.height=10, fig.width=13}
 init_traits %>% 
