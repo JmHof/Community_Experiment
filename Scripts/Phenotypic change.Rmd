@@ -36,11 +36,13 @@ OD_96h<- read.csv("../derived data/Clone_OD_96h.txt")
 ```
 
 1) remove defence values > 0 from the data
+
 ```{r}
 OD_96h[,c("gPred_gAlone" )] <-  replace(OD_96h[,c("gPred_gAlone" )], OD_96h[,c("gPred_gAlone" )] > 0, c(NA))
 ```
 
 2) calculate median traits and corresponding quantiles
+
 ```{r}
 
 Obs_traits_stats <- OD_96h %>% 
