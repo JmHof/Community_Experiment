@@ -30,9 +30,15 @@ set_flextable_defaults(
 ## Load data
 
 ```{r message=FALSE}
-counts_16_seq<-read_csv("../Data/sequencing_counts and metadata.csv", )
+counts_16_seq<-read_csv("../Data/sequencing_counts and metadata.csv" )
+
+Initial_Traits <- read_tsv("../Data/anc_evo_growth_metrics_initial.tsv")
+
+#these tables already contain the median values of the initial traits
 EVO_Trait <- read_tsv("../Data/Evolved Initial Traits AMiGA.txt")
 ANC_Trait <- read_tsv("../Data/Ancestral Initial Traits AMiGA.txt")
+
+               
 ```
 
 ## Calculate relative frequencies from 16s rRNA amplicon-sequencing counts
@@ -173,9 +179,98 @@ save_as_image(ft_species_w_variants,"../Results/frequency_species_with_variants.
 
 ## Initial Traits
 
-1) Matching the column names of EVO and ANC Trait to the ones used in 16s-rRNA counts
+1) Matching the column names to the ones used in 16s-rRNA counts
+
 ```{r}
-##
+colnames(Initial_Traits) <-c("strainID", "pred_treatment","prey_history", "replicate", "auc_log","gr", "k_lin", "OD_Min", "OD_Max") 
+```
+
+2) First defence is calculated for each clone. Then, for each species and evol. history, median defence and carrying capacity and the respective median absolute deviations (MAD) are computed.
+
+```{r}
+Initial_Traits[49,1] <- "HAMBI1287" #removing a duplicated value
+Initial_Traits <-Initial_Traits %>% 
+                      select("strainID", "pred_treatment","prey_history", "replicate","OD_Max") %>% 
+                      pivot_wider(id_cols = c("strainID", "prey_history", "replicate"), names_from = pred_treatment, values_from = OD_Max) %>% 
+                      rename(carrying_capacity = no,
+                            growth_with_p = yes) %>% 
+                      mutate(defence = log(growth_with_p/carrying_capacity)) %>% 
+                      group_by(strainID,prey_history) %>% 
+                      reframe(median_carrying_capacity = median(carrying_capacity),
+                            median_defence = median(defence),
+                            mad_carr_cap = mad(carrying_capacity),
+                            mad_defence = mad(defence))
+  
+
+# se_carr_cap = sd(carrying_capacity)/8,
+# se_defence = sd(defence)/8)
+```
+
+3) Visualise initial traits
+
+Defence
+
+```{r, echo=FALSE}
+init_defence <- ggplot(data= Initial_Traits, aes(y = median_defence, x = reorder(strainID, median_defence), fill = prey_history))+
+  geom_col(position = "dodge")+
+  geom_errorbar(aes(ymin = median_defence - mad_defence, ymax = median_defence + mad_defence ),position = "dodge")+
+  scale_fill_discrete(name = "Prey evol. history")+
+  labs(y = "defence \n [log(growth (+)predator/growth (-)predator)]")+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 12),
+         axis.text.x = element_blank(),
+         axis.title = element_text(size = 18),
+         axis.title.x = element_blank(),
+         axis.title.y = element_text( colour = "black"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 10, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"))
+```
+
+Carrying capacity
+
+```{r, echo=FALSE}
+
+init_growth <- ggplot(data= Initial_Traits, aes(y = median_carrying_capacity, x = reorder(strainID, median_defence), fill = prey_history))+
+  geom_col(position = "dodge")+
+  geom_errorbar(aes(ymin = median_carrying_capacity - mad_carr_cap, ymax = median_carrying_capacity + mad_carr_cap ),position = "dodge")+
+  scale_fill_discrete(name = "Prey evol. history")+
+  labs(y ="carrying capacity \n[optical density]", x = "strainID")+
+  theme_bw()+
+  theme( plot.title = element_text(size = 20, face = "bold"),
+         legend.text = element_text(size = 18),
+         legend.title = element_text(size = 18, face = "bold"),
+         legend.key.size = unit(1, "cm"),
+         axis.text = element_text(color = "grey50", size = 12),
+         axis.text.x = element_text( angle = 45,hjust = 1),
+         axis.title = element_text(size = 18),
+         axis.title.y = element_text( colour = "black"),
+         axis.title.y.right = element_text( colour = "#00A9E0"),
+         strip.text = element_text(size = 10, colour = "black", face = "bold"),
+         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"))
+
+```
+
+
+```{r,  fig.height=12, fig.width=13}
+
+init_defence /init_growth + plot_layout(guides = "collect")
+
+ggsave("Initial_traits_Anc_Evo.pdf", device = "pdf", path = "../Results", width = 270, height = 270,  units = "mm") 
+ggsave("Initial_traits_Anc_Evo.jpg", device = "jpg", path = "../Results", width = 270, height = 270,  units = "mm") 
+```
+
+The same information can be visualised in a trait space between both traits.
+Additionally, we can mark species that are common during the experiment.
+These are the species >1% rel. abundance (minus HAMBI-2160, which is only common in one microcosm).
+
+1) Matching the column names of EVO and ANC Trait to the ones used in 16s-rRNA counts
+
+```{r}
 colnames(EVO_Trait) <-c("strainID","prey_history", "growth", "pred_treatment", "defence") #, "genus", "species"
 colnames(ANC_Trait) <-c("strainID","prey_history", "growth", "pred_treatment", "defence")#, "genus", "species"
 ```
@@ -197,65 +292,6 @@ delta_anc_evo %>%
 filter( strainID == common_species$strainID)
 
 ```
-
-3) Visualise initial traits
-
-Defence
-
-```{r, echo=FALSE}
-init_defence <- ggplot(data= init_traits, aes(y = defence, x = reorder(strainID, defence), fill = prey_history))+
-  geom_col(position = "dodge")+
-  scale_fill_discrete(name = "Prey evol. history")+
-  labs(y = "defence \n [log(growth (+)predator/growth (-)predator)]")+
-  theme_bw()+
-  theme( plot.title = element_text(size = 20, face = "bold"),
-         legend.text = element_text(size = 18),
-         legend.title = element_text(size = 18, face = "bold"),
-         legend.key.size = unit(1, "cm"),
-         axis.text = element_text(color = "grey50", size = 12),
-         axis.text.x = element_blank(),
-         axis.title = element_text(size = 20),
-         axis.title.x = element_blank(),
-         axis.title.y = element_text( colour = "black"),
-         axis.title.y.right = element_text( colour = "#00A9E0"),
-         strip.text = element_text(size = 10, colour = "black", face = "bold"),
-         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"))
-```
-
-Carrying capacity
-
-```{r, echo=FALSE}
-
-init_growth <- ggplot(data= init_traits, aes(y = growth, x = reorder(strainID, defence), fill = prey_history))+
-  geom_col(position = "dodge")+
-  scale_fill_discrete(name = "Prey evol. history")+
-  labs(y ="growth capacity [optical density]", x = "strainID")+
-  theme_bw()+
-  theme( plot.title = element_text(size = 20, face = "bold"),
-         legend.text = element_text(size = 18),
-         legend.title = element_text(size = 18, face = "bold"),
-         legend.key.size = unit(1, "cm"),
-         axis.text = element_text(color = "grey50", size = 12),
-         axis.text.x = element_text( angle = 45,hjust = 1),
-         axis.title = element_text(size = 20),
-         axis.title.y = element_text( colour = "black"),
-         axis.title.y.right = element_text( colour = "#00A9E0"),
-         strip.text = element_text(size = 10, colour = "black", face = "bold"),
-         strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"))
-
-```
-
-
-```{r,  fig.height=12, fig.width=13}
-
-init_defence /init_growth + plot_layout(guides = "collect")
-
-ggsave("Initial_traits_Anc_Evo.pdf", device = "pdf", path = "../Results", width = 270, height = 270,  units = "mm") 
-```
-
-The same information can be visualised in a trait space between both traits.
-Additionally, we can mark species that are common during the experiment.
-These are the species >1% rel. abundance (minus HAMBI-2160, which is only common in one microcosm).
 
 ```{r, echo=FALSE, fig.height=10, fig.width=13}
 init_traits %>% 
