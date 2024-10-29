@@ -21,8 +21,6 @@ library(flextable)
 
 ```
 
-Set flextable defaults:
-
 ```{r}
 set_flextable_defaults(
   font.size = 10, theme_fun = theme_vanilla,
@@ -31,7 +29,6 @@ set_flextable_defaults(
 ```
 
 ## Load data
-
 
 ```{r, message=FALSE }
 predator_density <- read_delim("../derived data/predator_densities.tsv")
@@ -62,7 +59,7 @@ colnames(pred_prey_density)[6] <- c("predator_mL")
 
 ```
 
-## Calculating mean population densities
+## Calculation of mean population densities
 
 ```{r}
 pop_den_mean <- pred_prey_density %>% 
@@ -71,7 +68,7 @@ pop_den_mean <- pred_prey_density %>%
           mean_OD= mean(bacteria_od,na.rm = TRUE)) #calculate prey mean within interval
 ```
 
-## Calculating group means and standard error
+## Calculation of group means and standard error
 
 ```{r}
 group_densities<-pop_den_mean %>% 
@@ -111,7 +108,7 @@ pop_den_mean$prey_history <- factor(pop_den_mean$prey_history, levels = c("ances
 
 3) Linear model via glm() 
 
-Linear model for predator densities:
+Linear model for  predator densities:
 
 ```{r}
 mod_den_Pred <- glm(mean_Pred ~ predator_history * prey_history ,family = gaussian(link = "identity"), data = pop_den_mean)
@@ -137,9 +134,7 @@ tf_mod_den_Pred <- set_caption(tf_mod_den_Pred, "GLM - predator densities",
 tf_mod_den_Pred
 
 save_as_image(tf_mod_den_Pred,"../Results/GLM_predator_densiteis.png")
-
 #ANOVA
-
 mod_anova_Pred <- anova(mod_den_Pred, test = "F")
 tf_mod_anova_Pred <- cbind(row.names(mod_anova_Pred[,1:6]), mod_anova_Pred[,1:6])
 colnames(tf_mod_anova_Pred)[1] <- ("variable")
@@ -151,9 +146,7 @@ tf_mod_anova_Pred <- set_caption(tf_mod_anova_Pred, "ANOVA - predator densities"
 tf_mod_anova_Pred
 
 save_as_image(tf_mod_anova_Pred,"../Results/ANOVA_predator_densiteis.png")
-
 #pair-wise comparisons
-
 pair_wise_Pred <-TukeyHSD(aov(mod_den_Pred))
 ft_tukey_pred <- flextable(data.frame(variable = rownames(pair_wise_Pred$`predator_history:prey_history`),pair_wise_Pred$`predator_history:prey_history` ))%>% 
                                 colformat_double(digits = 4)
@@ -165,12 +158,11 @@ ft_tukey_pred
 save_as_image(ft_tukey_pred ,"../Results/pair-wise_predator_densiteis.png")
 
 #letters for multiple comparisons
-
 multcompView::multcompLetters4(aov(mod_den_Pred), pair_wise_Pred)
 ```
 
 
-Linear model for prey densities (OD):
+Linear model for  prey densities (OD):
 
 ```{r}
 mod_den_OD <- glm(mean_OD ~ predator_history * prey_history ,family = gaussian(link = "identity"), data = pop_den_mean)
@@ -233,8 +225,8 @@ multcompView::multcompLetters4(aov(mod_den_OD), pair_wise_OD)
 p_mean_pred <-  pop_den_mean %>% 
   filter(!predator_history == "no predator") %>% 
   ggplot()+
-  geom_jitter(aes(x = prey_history, y= mean_Pred, shape = interaction(prey_history,predator_history), colour = interaction(prey_history,replicate)), size = 2.5)+
-  geom_crossbar(data =  filter(group_densities,!predator_history == "no predator"),aes(x = prey_history,y = avg_Pred, ymin= (-1*se_Pred)+avg_Pred, ymax = se_Pred+avg_Pred), colour = "#DC3220")+
+  geom_jitter(aes(x = prey_history, y= mean_Pred, shape = interaction(prey_history,predator_history), colour = interaction(prey_history,replicate)), size = 3)+
+  geom_pointrange(data =  filter(group_densities,!predator_history == "no predator"),aes(x = prey_history,y = avg_Pred, ymin= (-1*se_Pred)+avg_Pred, ymax = se_Pred+avg_Pred), shape=21, fill = "#DC3220", size = 1.08)+
   
   scale_shape_manual(breaks = c("ancestral prey.naive predator","evolved prey.naive predator","ancestral prey.evolved predator","evolved prey.evolved predator"),values = c(16,16,17,17), guide = "none")+
   scale_colour_manual(name = "replicate",breaks = c("ancestral prey.A","evolved prey.A","ancestral prey.C","evolved prey.C","ancestral prey.E","evolved prey.E"), values = c("#7cac00e6","#c87cffff","#7cac00e6", "#00bec4ff","#7cac00e6","#f8776eff"), guide = "none" )+
@@ -248,8 +240,8 @@ p_mean_pred <-  pop_den_mean %>%
          legend.text = element_text(size = 18),
          legend.title = element_text(size = 18, face = "bold"),
          legend.key.size = unit(1, "cm"),
-         axis.text = element_text(color = "grey50", size = 12),
-         axis.title = element_text(size = 12),
+         axis.text = element_text(color = "grey50", size = 16),
+         axis.title = element_text(size = 18),
          axis.title.x = element_text(),
          axis.title.y = element_text( colour = "black"),
          axis.title.y.right = element_text( colour = "#00A9E0"),
@@ -269,8 +261,8 @@ p_mean_pred <-  pop_den_mean %>%
 
 ```{r, echo=FALSE}
 p_mean_prey <- ggplot( )+
-  geom_jitter(data = pop_den_mean, aes(x = prey_history,y = mean_OD, shape = interaction(prey_history,predator_history), colour = interaction(prey_history,replicate)), size = 2.5)+
-  geom_crossbar(data = group_densities,aes(x = prey_history,y = avg_OD, ymin= (-1*se_OD)+avg_OD, ymax = se_OD+avg_OD), colour = "#005AB5")+
+  geom_jitter(data = pop_den_mean, aes(x = prey_history,y = mean_OD, shape = interaction(prey_history,predator_history), colour = interaction(prey_history,replicate)), size = 3)+
+  geom_pointrange(data = group_densities,aes(x = prey_history,y = avg_OD, ymin= (-1*se_OD)+avg_OD, ymax = se_OD+avg_OD), shape=21, fill = "#005AB5", size = 1.08)+
   
   scale_shape_manual(breaks = c("ancestral prey.naive predator","evolved prey.naive predator","ancestral prey.evolved predator","evolved prey.evolved predator","ancestral prey.no predator","evolved prey.no predator"),values = c(16,16,17,17,9,9), guide = "none")+
   scale_colour_manual(name = "replicate",breaks = c("ancestral prey.A","evolved prey.A","ancestral prey.C","evolved prey.C","ancestral prey.E","evolved prey.E"), values = c("#7cac00e6","#c87cffff","#7cac00e6", "#00bec4ff","#7cac00e6","#f8776eff"), guide = "none" )+
@@ -285,8 +277,8 @@ p_mean_prey <- ggplot( )+
          legend.text = element_text(size = 18),
          legend.title = element_text(size = 18, face = "bold"),
          legend.key.size = unit(1, "cm"),
-         axis.text = element_text(color = "grey50", size = 12),
-         axis.title = element_text(size = 12),
+         axis.text = element_text(color = "grey50", size = 16),
+         axis.title = element_text(size = 18),
          axis.title.x = element_text(),
          axis.title.y = element_text( colour = "black"),
          axis.title.y.right = element_text( colour = "#00A9E0"),
@@ -305,7 +297,9 @@ p_mean_prey <- ggplot( )+
 3) Combine both plots 
 
 ```{r, fig.dim=c(10,14)}
-p_mean_pred / p_mean_prey + plot_layout(width = c(2,3)) + plot_annotation( title = "Predator and Prey mean density")
+p_mean_pred + p_mean_prey + plot_layout(widths = c(2,3))
 
+#ggsave("Mean_population_densities.jpg", device = "jpg", path = "../Results", width = 450, height = 200,  units = "mm" )
+ggsave("Mean_population_densities.pdf", device = "pdf", path = "../Results", width = 450, height = 200,  units = "mm" )
 ```
 

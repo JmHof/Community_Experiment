@@ -1,0 +1,191 @@
+---
+title: "Gemetric Trajectory Ana - predator free samples"
+author: "Julius"
+date: "2024-10-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+
+```{r, message=FALSE}
+library(tidyverse)
+library(data.table)
+library(ecotraj)
+library(vegan)
+library(ggrepel)
+library(zCompositions)
+library(compositions)
+library(funrar)
+library(flextable)
+```
+
+```{r}
+set_flextable_defaults(
+  font.size = 10, theme_fun = theme_vanilla,
+  padding = 6,
+  font.family = "Arial", digits = 3)
+```
+
+
+## Load frequency data
+
+The file contains species frequencies from 16s rRNA amplicon sequencing.
+
+```{r, message=FALSE}
+counts_16_seq<-read_csv("../Data/sequencing_counts and metadata.csv")
+```
+## Aim of Analysis
+
+The aim of the geometric analysis of community trajectories in general was to identify differences and patterns in the compositional trajectories of communities throughout the experiment. Therefore a Principal coordinate Analysis on the Aitchisons distance between communities at all sampling time points was performed. For this analysis microcosms without predators were excluded because these were sampled in less frequent intervals. Here, we perform geometric analysis of these trajectories from microcosms without predators and estimate the speed of compositional change by calculating the segment length between data points of each microcosm on consecutive sampling days.
+
+## Re-arranging data for trajectory analysis
+
+First the values for prey and predatory history are re-named.
+Then the data of interest is selected, i.e. only data from samples without predators are selected. 
+Columns "full_species" for the full species name and "treatment" for the combinations of predator and prey history are created.
+Lastly the data is brought in shape for the following analyses.
+
+```{r}
+frequencies_predator_free <- counts_16_seq %>% 
+  mutate(prey_history = str_replace_all(prey_history, c("ANC" = "Anc.prey", "EVO" = "Evo.prey")),
+         predator_history = str_replace_all(predator_history, c("ANC" = "Anc.predator", "EVO" = "Evo.predator")),
+         replicate = str_replace_all(replicate, c("A" = "A", "C" = "B", "E" = "C"))) %>% 
+  filter(predator_history == "no_predator", time_days %in% c(12,28,44,60)) %>% 
+  dplyr::select(genus,species,count,replicate, prey_history, predator_history, time_days) %>% 
+  mutate(full_species = apply(., 1, function(x) paste(x["genus"],x["species"], sep = "_")),
+         treatment = apply(., 1, function(x) paste(x["prey_history"],x["predator_history"], sep = "_"))) %>% 
+  dplyr::select(full_species, treatment, count,replicate, time_days) %>% 
+  group_by(treatment,replicate, time_days)%>% 
+  reframe(Species = full_species,
+            
+            count = count) %>% 
+  pivot_wider(id_cols = c(1,2,3), names_from = "Species", values_from = "count") %>% 
+  ungroup() 
+```
+
+## Analyse Communnity Trajectories
+
+1) First, zeros are replaced by a Bayesian-multiplicative replacement strategy that preserves the ratios between the non-zero components and amplicon counts are transformed to relative values based on the total counts per sample.
+
+Furthermore, the amplicon-counts are then transformed as the Aitchison distance is the euclidean distance between samples of mean centred log transformed (clr) counts.
+
+```{r}
+trans_count_pred_free <- zCompositions::cmultRepl(frequencies_predator_free[,4:27], output = "prop")
+
+trans_count_pred_free_clr <- compositions::clr(trans_count_pred_free)
+
+```
+
+2) Principal Component Analysis is performed based on the CLR transformed data (alternatively on ) equivalent to Principal Coordinate Analysis (PCoA) on  Aitchisons distance). 
+
+```{r}
+PCA_pred_free <-   prcomp(trans_count_pred_free_clr)
+
+```
+
+3) Coordinates of data points in the PCoA are extracted and are assigned to the corresponding sample names with sampling days.
+
+```{r}
+
+
+PCA_cord_pred_free <- data.frame(PCA_pred_free$x) %>% 
+  dplyr::select(PC1, PC2)
+
+named_PCA_pred_free <- cbind(PCA_cord_pred_free,frequencies_predator_free[,1:3])
+
+#named_PCA$time_days <- as.numeric(named_PCA$time_days)
+
+```
+
+## Visualise trajectories with ggplot
+
+
+```{r}
+ggplot(data = named_PCA_pred_free,aes( x = PC1, y= PC2, colour = treatment, group = interaction(treatment,replicate) ))+
+        geom_path(arrow = arrow(ends = "last",length=unit(0.4,"cm"), type = "closed"), linewidth = 0.7, linejoin="round")+
+        geom_point(aes(shape = interaction(treatment,replicate)), size = 2)+
+        labs( x = "PC1" ,y = "PC2")+
+        theme_bw()+
+        theme(plot.title = element_text(size = 20, face = "bold"),
+              legend.text = element_text(size = 18),
+              legend.title = element_text(size = 18, face = "bold"),
+              legend.key.size = unit(1, "cm"),
+              axis.text = element_text(color = "grey50", size = 18),
+              axis.title = element_text(size = 18),
+              axis.title.y = element_text( colour = "black"),
+              axis.title.y.right = element_text( colour = "#00A9E0"),
+              strip.text = element_text(size = 18, colour = "black", face = "bold"),
+              strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(), 
+              axis.line = element_line(colour = "black"))
+
+ggsave("Aitchison_PCA_pred_free_trajectoriesp.jpg", device = "jpg", path = "../Results", width = 360, height = 300,  units = "mm" )
+```
+
+
+## Geometric analysis of trajectories
+
+Further analysis can be performed either directly from the Aitchison distance matrix or from a distance matrix based on the PCoA.
+I am visualising the trajectories in the PCoA, so I am using the PCoA distance matrix.
+
+1) The distance matrix is created from PCoA coordinates
+
+```{r}
+distance_matrix_pred_free <- dist(PCA_cord_pred_free )
+
+```
+
+2) Lengths of segments between consecutive sampling days is calculated
+
+```{r}
+pred_free_samples <- named_PCA_pred_free %>% 
+  reframe(sample = paste(treatment, replicate, sep = " ")) %>% 
+  as.vector()
+  
+
+traj_length_pred_free <- trajectoryLengths(distance_matrix_pred_free, sites = pred_free_samples$sample, surveys = named_PCA_pred_free$time_days )
+```
+
+## Visualise segment lengths 
+
+```{r}
+traj_length_pred_free <- cbind(unique(pred_free_samples$sample),traj_length_pred_free)
+traj_length_pred_free <- pivot_longer(traj_length_pred_free[,1:5], cols = c(2:4), names_to = "segments", values_to = "length")
+traj_length_pred_free$segments <-  factor(traj_length_pred_free$segments, levels = unique(traj_length_pred_free$segments)) 
+colnames(traj_length_pred_free)[1]<- c("sample")
+
+traj_length_pred_free <- traj_length_pred_free %>% 
+   separate_wider_delim(sample, delim = " ", names = c("treatment", "replicate"))
+```
+
+
+```{r, echo=FALSE}
+ggplot(data = traj_length_pred_free, aes(x= segments, y = length, group = interaction(treatment,replicate), colour = treatment, shape = interaction(treatment,replicate)))+
+        geom_point(stat='summary', fun=sum, size = 2.5) +
+        stat_summary(fun=sum, geom="line")+
+        labs(x = "segment between sampling days" ,y = "community change (1/day)")+
+        scale_x_discrete(labels=c(S1 = "12-28",S2 = "28-44", S3 = "44-60"))+
+        theme_bw()+
+        theme(plot.title = element_text(size = 20, face = "bold"),
+              legend.text = element_text(size = 18),
+              legend.title = element_text(size = 18, face = "bold"),
+              legend.key.size = unit(1, "cm"),
+              axis.text = element_text(color = "grey50", size = 18),
+              axis.text.x = element_text(color = "grey50", size = 18, angle = 45, vjust = 0.5),
+              axis.title = element_text(size = 18),
+              axis.title.y = element_text( colour = "b lack"),
+              axis.title.y.right = element_text( colour = "#00A9E0"),
+              strip.text = element_text(size = 18, colour = "black", face = "bold"),
+              strip.background = element_rect(color="black", fill="white", linewidth=1, linetype="solid"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(), 
+              axis.line = element_line(colour = "black"))
+
+ggsave("Aitchison_PCA_pred_free_segments.jpg", device = "jpg", path = "../Results", width = 360, height = 200,  units = "mm" )
+#ggsave("Aitchison_PCA_pred_free_segments.pdf", device = "pdf", path = "../Results", width = 360, height = 200,  units = "mm" )
+```
