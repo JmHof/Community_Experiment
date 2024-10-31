@@ -4,7 +4,7 @@ The described experiment was performed at Teppo Hiltunens lab in Finland.
 
 The repository contains analyses on phenotypic change, community composition, the contributions of species sorting and evolution, and population densities.
 Shane Hogle processed and analised sequencing data (16s rRNA amplicon seq, whole genome seqeuncing, community metagenomes). His work is stored at the following repository:
-https://gitlab.utu.fi/slhogl/hambiDoubleEvoHi . 
+https://github.com/slhogle/hambiDoubleEvo . 
 
 The folder "scripts" contains the code used for my analyses. The scripts there draw from the data in the folder "Data" or the "derived data" folder which contains modified data files based on the files in "Data".
 The data available here comprises the files that I (JH) received from the collaborators at the University of Turku and constitute all data necessary for my analyses.
